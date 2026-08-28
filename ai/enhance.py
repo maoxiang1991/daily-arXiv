@@ -71,7 +71,7 @@ def process_single_item(chain, item: Dict, language: str, groups_text: str, know
         接口地址可用环境变量 SPAM_CHECK_URL 覆盖; 设为空则跳过检测。
         接口异常时放行(不判定为敏感), 避免第三方服务故障导致论文被误丢弃。
         """
-        spam_url = os.environ.get("SPAM_CHECK_URL", "https://spam.dw-dengwei.workers.dev")
+        spam_url = os.environ.get("SPAM_CHECK_URL", "")  # 默认关闭; 需要时设置第三方检测接口地址
         if not spam_url:
             return False
         try:

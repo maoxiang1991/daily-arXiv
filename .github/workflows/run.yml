@@ -146,10 +146,10 @@ jobs:
         today=${{ steps.crawl_step.outputs.crawl_date }}
         echo "转换为Markdown格式... / Converting to Markdown format..."
         
-        # 从 topics.yaml 读取语言配置 / Read language from topics.yaml
-        export LANGUAGE=$(python -c "import yaml; print(yaml.safe_load(open('../topics.yaml')).get('llm', {}).get('language', 'Chinese'))")
-
         cd to_md
+
+        # 从 topics.yaml 读取语言配置(此时已在 to_md 目录) / Read language from topics.yaml (cwd is to_md)
+        export LANGUAGE=$(python -c "import yaml; print(yaml.safe_load(open('../topics.yaml')).get('llm', {}).get('language', 'Chinese'))")
         
         # 使用AI增强文件进行转换 / Use AI enhanced file for conversion
         AI_FILE="../data/${today}_AI_enhanced_${LANGUAGE}.jsonl"

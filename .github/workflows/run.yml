@@ -315,8 +315,9 @@ jobs:
         # 复制数据文件到临时目录 / Copy data files to temporary directory
         cp -r data/* /tmp/data_files/data/ 2>/dev/null || true
         cp assets/file-list.txt /tmp/data_files/assets/ 2>/dev/null || true
-        
-        echo "数据文件已保存到临时目录 / Data files saved to temporary directory"
+
+        echo "临时目录内容 / /tmp/data_files contents:"
+        ls -la /tmp/data_files/data/ /tmp/data_files/assets/
 
     - name: Setup and commit to data branch
       if: steps.dedup_check.outputs.has_new_content == 'true'
@@ -360,14 +361,18 @@ jobs:
         mkdir -p data assets
         cp -r /tmp/data_files/data/* data/ 2>/dev/null || true
         cp /tmp/data_files/assets/file-list.txt assets/ 2>/dev/null || true
-        
+
+        echo "待提交文件 / Files to commit:"
+        ls -la data/ assets/
+
         # 只添加数据文件 / Only add data files
-        git add data/* 2>/dev/null || true
-        git add assets/file-list.txt 2>/dev/null || true
-        
+        git add data/*
+        git add assets/file-list.txt
+
         # 检查是否有数据变更需要提交 / Check if there are data changes to commit
         if git diff --staged --quiet; then
-          echo "没有数据变更需要提交 / No data changes to commit"
+          echo "❌ 没有数据变更需要提交——prepare 步骤可能未复制到文件, 中止 / No data staged - prepare step likely failed, aborting"
+          exit 1
         else
           git commit -m "update: $today arXiv papers"
           echo "数据变更已提交到 data 分支 / Data changes committed to data branch"

@@ -2326,3 +2326,122 @@ footer {
   display: flex;
   align-items: center;
 }
+/* ===== 关注分组 (Groups) ===== */
+.group-label-container {
+  display: flex;
+  align-items: center;
+  max-width: 1440px; /* 与 category-label-container 保持一致 / Align with category bar */
+  width: 100%;
+  padding: 0 24px 5px 24px; /* 与 category 栏左右内边距一致 / Same horizontal padding */
+  margin: 0 auto; /* 居中 / Centered */
+  position: relative;
+}
+
+.group-scroll {
+  display: flex;
+  overflow-x: auto;
+  gap: 10px;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  width: 100%;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+}
+
+.group-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background-color: var(--background-hover);
+  border: none;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: var(--transition);
+  white-space: nowrap;
+  margin: 0 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+}
+
+.group-button:hover {
+  background-color: var(--border-color);
+  color: var(--text-color);
+}
+
+.group-button.active {
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.group-count {
+  margin-left: 6px;
+  padding: 0 6px;
+  background-color: rgba(0, 0, 0, 0.06);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.group-button.active .group-count {
+  background-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+/* 卡片上的分组标签 / Topic tag on paper cards */
+.topic-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background-color: rgba(52, 168, 83, 0.12);
+  color: #2e9e4f;
+  border: 1px solid rgba(52, 168, 83, 0.35);
+  white-space: nowrap;
+}
+
+/* ===== 日期面板里的每日论文数列表 / Date stats list in date picker ===== */
+.date-stats-list {
+  margin-top: 14px;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.date-stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background-color: var(--background-hover);
+  cursor: pointer;
+  transition: var(--transition);
+  font-size: 14px;
+}
+
+.date-stats-row:hover {
+  background-color: var(--border-color);
+}
+
+.date-stats-row.active {
+  background: var(--gradient-primary);
+  color: white;
+}
+
+.date-stats-row .date-stats-count {
+  font-weight: 600;
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 1px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.date-stats-row.active .date-stats-count {
+  background-color: rgba(255, 255, 255, 0.3);
+}

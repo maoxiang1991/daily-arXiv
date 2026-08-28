@@ -131,6 +131,13 @@
                         <!-- 分类按钮将通过 JavaScript 动态生成 -->
                     </div>
                 </div>
+                <!-- 关注分组 (Groups) -->
+                <div class="group-label-container">
+                    <span class="category-nav-label">分组 / Groups</span>
+                    <div class="group-scroll" id="groupButtons">
+                        <!-- 分组按钮将通过 JavaScript 动态生成 -->
+                    </div>
+                </div>
                 <!-- Filter Tag Container -->
                 <div class="filter-label-container">
                     <span class="filter-nav-label">Filter</span>
@@ -167,6 +174,17 @@
                                 <input type="checkbox" id="dateRangeMode">
                                 <span class="toggle-slider"></span>
                             </label>
+                        </div>
+                        <div class="date-range-selector">
+                            <span class="toggle-label">All Dates</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="allDatesMode">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <!-- 每日论文数列表 / Per-date paper count list -->
+                        <div class="date-stats-list" id="dateStatsList">
+                            <!-- 日期行将通过 JavaScript 动态生成 -->
                         </div>
                     </div>
                 </div>

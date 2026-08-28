@@ -9,6 +9,8 @@ let urlKeywordsParam = null; // 从URL参数中获取的keywords
 let paperData = {};
 let flatpickrInstance = null;
 let isRangeMode = false;
+let isAllDatesMode = false; // 是否加载全部日期 / whether to load all dates at once
+let dateStats = {}; // 每日论文数 / per-date paper counts
 let activeKeywords = []; // 存储激活的关键词
 let userKeywords = []; // 存储用户的关键词
 let activeAuthors = []; // 存储激活的作者
@@ -18,6 +20,9 @@ let currentFilteredPapers = []; // 当前过滤后的论文列表
 let textSearchQuery = ''; // 实时文本搜索查询
 let previousActiveKeywords = null; // 文本搜索激活时，暂存之前的关键词激活集合
 let previousActiveAuthors = null; // 文本搜索激活时，暂存之前的作者激活集合
+let activeGroups = []; // 激活的关注分组(多选) / Active topic groups (multi-select)
+let groupDefinitions = []; // 分组定义(来自 assets/groups.json) / Group definitions
+let urlGroupParam = null; // 从URL参数中获取的group / group from URL params
 
 // 加载用户的关键词设置
 function loadUserKeywords() {
@@ -239,9 +244,16 @@ function getUrlKeywords() {
   return keywords ? decodeURIComponent(keywords).split(',').map(k => k.trim()).filter(k => k) : null;
 }
 
+// 从URL参数中获取group
+function getUrlGroup() {
+  const params = new URLSearchParams(window.location.search);
+  const group = params.get('group');
+  return group ? decodeURIComponent(group).split(',').map(g => g.trim()).filter(g => g) : null;
+}
+
 // 检查是否以JSON模式运行
 function isJsonMode() {
-  return getUrlCategory() !== null || getJsonParam() !== null || getUrlAuthor() !== null || getUrlKeywords() !== null;
+  return getUrlCategory() !== null || getJsonParam() !== null || getUrlAuthor() !== null || getUrlKeywords() !== null || getUrlGroup() !== null;
 }
 
 // 输出JSON格式的论文数据
@@ -257,6 +269,9 @@ function outputJsonData(papers, category) {
       authors: p.authors,
       categories: p.category,
       summary: p.summary,
+      abstract_zh: p.abstract_zh || '',
+      groups: p.groups || [],
+      matched_keywords: p.matched_keywords || [],
       date: p.date,
       url: p.url,
       reason: p.matchReason
@@ -372,6 +387,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   fetchGitHubStats();
 
+  // 加载分组定义 / Load group definitions
+  loadGroupDefinitions();
+
   // 加载用户关键词
   loadUserKeywords();
 
@@ -389,6 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
       loadPapersByDate(availableDates[0]);
     }
   });
+  fetchDateStats();
 });
 
 async function fetchGitHubStats() {
@@ -428,6 +447,7 @@ function initEventListeners() {
   });
 
   document.getElementById('dateRangeMode').addEventListener('change', toggleRangeMode);
+  document.getElementById('allDatesMode').addEventListener('change', toggleAllDatesMode);
   
   // 其他原有的事件监听器
   document.getElementById('closeModal').addEventListener('click', closeModal);
@@ -756,6 +776,12 @@ function initDatePicker() {
     inline: true,
     dateFormat: "Y-m-d",
     defaultDate: availableDates[0],
+    onDayCreate: function(dObj, dStr, fp, dayElem) {
+      // 日历悬停提示当日论文数 / Tooltip with paper count on hover
+      if (dateStats[dStr] !== undefined) {
+        dayElem.title = `${dateStats[dStr]} 篇论文`;
+      }
+    },
     enable: [
       function(date) {
         // 只启用有效日期
@@ -776,6 +802,11 @@ function initDatePicker() {
       } else if (!isRangeMode && selectedDates.length === 1) {
         // 处理单个日期选择
         const selectedDate = formatDateForAPI(selectedDates[0]);
+        // 手动选日期时退出全部日期模式 / Exit all-dates mode when picking a specific date
+        if (isAllDatesMode) {
+          isAllDatesMode = false;
+          document.getElementById('allDatesMode').checked = false;
+        }
         // if (availableDates.includes(selectedDate)) {
           loadPapersByDate(selectedDate);
           toggleDatePicker();
@@ -791,23 +822,160 @@ function initDatePicker() {
   }
 }
 
+// 获取每日论文数统计 / Fetch per-date paper counts
+async function fetchDateStats() {
+  try {
+    const statsUrl = DATA_CONFIG.getDataUrl('assets/file-stats.json');
+    const response = await fetch(statsUrl);
+    if (!response.ok) {
+      console.error('加载每日论文数统计失败 / Failed to load date stats:', response.status);
+      return;
+    }
+    dateStats = await response.json();
+    renderDateStatsList();
+  } catch (error) {
+    console.error('加载每日论文数统计失败 / Failed to load date stats:', error);
+  }
+}
+
+// 渲染日期面板里的每日论文数列表 / Render per-date paper count list in the date picker
+function renderDateStatsList() {
+  const container = document.getElementById('dateStatsList');
+  if (!container || availableDates.length === 0) {
+    return;
+  }
+
+  // 最新日期在前 / Newest first
+  const dates = [...availableDates].sort((a, b) => b.localeCompare(a));
+
+  container.innerHTML = '';
+  dates.forEach(date => {
+    const count = dateStats[date] !== undefined ? dateStats[date] : '?';
+    const row = document.createElement('div');
+    row.className = `date-stats-row ${currentDate === date ? 'active' : ''}`;
+    row.innerHTML = `
+      <span>📅 ${formatDate(date)}</span>
+      <span class="date-stats-count">${count} 篇</span>
+    `;
+    row.addEventListener('click', () => {
+      // 点击日期行: 退出全部日期模式并加载该日 / Exit all-dates mode and load that date
+      if (isAllDatesMode) {
+        isAllDatesMode = false;
+        document.getElementById('allDatesMode').checked = false;
+      }
+      loadPapersByDate(date);
+      toggleDatePicker();
+    });
+    container.appendChild(row);
+  });
+}
+
 function formatDateForAPI(date) {
-  return date.getFullYear() + "-" + 
-         String(date.getMonth() + 1).padStart(2, '0') + "-" + 
+  return date.getFullYear() + "-" +
+         String(date.getMonth() + 1).padStart(2, '0') + "-" +
          String(date.getDate()).padStart(2, '0');
 }
 
 function toggleRangeMode() {
   isRangeMode = document.getElementById('dateRangeMode').checked;
-  
+
+  // Range 与 All Dates 互斥 / Range and All Dates are mutually exclusive
+  if (isRangeMode && isAllDatesMode) {
+    isAllDatesMode = false;
+    document.getElementById('allDatesMode').checked = false;
+  }
+
   if (flatpickrInstance) {
     flatpickrInstance.set('mode', isRangeMode ? 'range' : 'single');
+  }
+}
+
+function toggleAllDatesMode() {
+  isAllDatesMode = document.getElementById('allDatesMode').checked;
+
+  // Range 与 All Dates 互斥 / Range and All Dates are mutually exclusive
+  if (isAllDatesMode && isRangeMode) {
+    isRangeMode = false;
+    document.getElementById('dateRangeMode').checked = false;
+    if (flatpickrInstance) {
+      flatpickrInstance.set('mode', 'single');
+    }
+  }
+
+  if (isAllDatesMode) {
+    loadAllDates();
+    toggleDatePicker();
+  } else {
+    loadPapersByDate(availableDates[0]);
+    toggleDatePicker();
+  }
+}
+
+// 一次性加载所有日期的论文, 按日期倒序展示 / Load all dates' papers at once, sorted by date desc
+async function loadAllDates() {
+  const dates = [...availableDates].sort(); // 升序 / ascending
+
+  if (dates.length === 0) {
+    return;
+  }
+
+  currentDate = 'all';
+  document.getElementById('currentDate').textContent = `全部论文 / All papers (${dates.length} 天)`;
+  renderDateStatsList();
+
+  const container = document.getElementById('paperContainer');
+  container.innerHTML = `
+    <div class="loading-container">
+      <div class="loading-spinner"></div>
+      <p>正在加载全部 ${dates.length} 天的论文... / Loading all papers from ${dates.length} dates...</p>
+    </div>
+  `;
+
+  try {
+    const allPaperData = {};
+
+    for (const date of dates) {
+      const selectedLanguage = selectLanguageForDate(date);
+      const dataUrl = DATA_CONFIG.getDataUrl(`data/${date}_AI_enhanced_${selectedLanguage}.jsonl`);
+      const response = await fetch(dataUrl);
+      if (!response.ok) {
+        continue; // 跳过缺失的文件 / Skip missing files
+      }
+      const text = await response.text();
+      if (!text || text.trim() === '') {
+        continue;
+      }
+      const dataPapers = parseJsonlData(text, date);
+
+      // 合并进总数据 / Merge into combined data
+      Object.keys(dataPapers).forEach(category => {
+        if (!allPaperData[category]) {
+          allPaperData[category] = [];
+        }
+        allPaperData[category] = allPaperData[category].concat(dataPapers[category]);
+      });
+    }
+
+    paperData = allPaperData;
+
+    const categories = getAllCategories(paperData);
+    renderCategoryFilter(categories);
+    renderPapers();
+  } catch (error) {
+    console.error('加载全部论文失败:', error);
+    container.innerHTML = `
+      <div class="loading-container">
+        <p>Loading data fails. Please retry.</p>
+        <p>Error messages: ${error.message}</p>
+      </div>
+    `;
   }
 }
 
 async function loadPapersByDate(date) {
   currentDate = date;
   document.getElementById('currentDate').textContent = formatDate(date);
+  renderDateStatsList();
   
   // 更新日期选择器中的选中日期
   if (flatpickrInstance) {
@@ -930,6 +1098,9 @@ function parseJsonlData(jsonlText, date) {
         method: paper.AI && paper.AI.method ? paper.AI.method : '',
         result: paper.AI && paper.AI.result ? paper.AI.result : '',
         conclusion: paper.AI && paper.AI.conclusion ? paper.AI.conclusion : '',
+        abstract_zh: paper.AI && paper.AI.abstract_zh ? paper.AI.abstract_zh : '',
+        groups: paper.AI && Array.isArray(paper.AI.groups) ? paper.AI.groups : [],
+        matched_keywords: Array.isArray(paper.matched_keywords) ? paper.matched_keywords : [],
         code_url: paper.code_url || '',
         code_stars: paper.code_stars || 0,
         code_last_update: paper.code_last_update || ''
@@ -957,6 +1128,92 @@ function getAllCategories(data) {
     }),
     categoryCounts: catePaperCount
   };
+}
+
+// 加载分组定义 / Load group definitions from assets/groups.json
+async function loadGroupDefinitions() {
+  try {
+    const response = await fetch('assets/groups.json');
+    if (!response.ok) {
+      console.error('加载分组定义失败 / Failed to load group definitions:', response.status);
+      return;
+    }
+    const data = await response.json();
+    groupDefinitions = data.groups || [];
+    // 从URL参数恢复激活的分组 / Restore active groups from URL params
+    urlGroupParam = getUrlGroup();
+    if (urlGroupParam) {
+      activeGroups = [...urlGroupParam];
+    }
+    renderGroupFilter();
+  } catch (error) {
+    console.error('加载分组定义失败, 隐藏分组栏 / Failed to load groups, hiding group bar:', error);
+  }
+}
+
+// 渲染分组筛选按钮 / Render group filter buttons
+function renderGroupFilter() {
+  const container = document.getElementById('groupButtons');
+  if (!container || groupDefinitions.length === 0) {
+    return;
+  }
+
+  const allPapers = [];
+  Object.values(paperData).forEach(papers => allPapers.push(...papers));
+  const countFor = (groupName) => allPapers.filter(p => p.groups && p.groups.includes(groupName)).length;
+  const ungroupedCount = allPapers.filter(p => !p.groups || p.groups.length === 0).length;
+
+  container.innerHTML = '';
+
+  const allBtn = document.createElement('button');
+  allBtn.className = `group-button ${activeGroups.length === 0 ? 'active' : ''}`;
+  allBtn.innerHTML = `全部<span class="group-count">${allPapers.length}</span>`;
+  allBtn.addEventListener('click', () => toggleGroupFilter('all'));
+  container.appendChild(allBtn);
+
+  groupDefinitions.forEach(group => {
+    const btn = document.createElement('button');
+    btn.className = `group-button ${activeGroups.includes(group.name) ? 'active' : ''}`;
+    btn.innerHTML = `${group.name}<span class="group-count">${countFor(group.name)}</span>`;
+    btn.addEventListener('click', () => toggleGroupFilter(group.name));
+    container.appendChild(btn);
+  });
+
+  if (ungroupedCount > 0) {
+    const btn = document.createElement('button');
+    btn.className = `group-button ${activeGroups.includes('__ungrouped') ? 'active' : ''}`;
+    btn.innerHTML = `未分组<span class="group-count">${ungroupedCount}</span>`;
+    btn.addEventListener('click', () => toggleGroupFilter('__ungrouped'));
+    container.appendChild(btn);
+  }
+}
+
+// 切换分组过滤(多选, OR 语义, 硬过滤) / Toggle group filter (multi-select, OR semantics, hard filter)
+function toggleGroupFilter(group) {
+  if (group === 'all') {
+    activeGroups = [];
+  } else {
+    const idx = activeGroups.indexOf(group);
+    if (idx >= 0) {
+      activeGroups.splice(idx, 1);
+    } else {
+      activeGroups.push(group);
+    }
+  }
+
+  // 如果不是JSON模式，才更新URL参数
+  if (!isJsonMode()) {
+    const url = new URL(window.location);
+    if (activeGroups.length === 0) {
+      url.searchParams.delete('group');
+    } else {
+      url.searchParams.set('group', activeGroups.join(','));
+    }
+    window.history.replaceState({}, '', url);
+  }
+
+  renderGroupFilter();
+  renderPapers();
 }
 
 function renderCategoryFilter(categories) {
@@ -1098,6 +1355,9 @@ function renderPapers() {
   const container = document.getElementById('paperContainer');
   container.innerHTML = '';
   container.className = `paper-container ${currentView === 'list' ? 'list-view' : ''}`;
+
+  // 刷新分组按钮计数(论文数据异步加载完成后保持同步) / Refresh group button counts
+  renderGroupFilter();
   
   let papers = [];
   if (currentCategory === 'all') {
@@ -1110,7 +1370,10 @@ function renderPapers() {
   } else if (paperData[currentCategory]) {
     papers = paperData[currentCategory];
   }
-  
+
+  // 按日期倒序排列(最新在前): 全量加载模式下跨日期混排保持时间顺序 / Sort by date desc
+  papers.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
   // 创建匹配论文的集合
   let filteredPapers = [...papers];
 
@@ -1119,6 +1382,16 @@ function renderPapers() {
     p.isMatched = false;
     p.matchReason = undefined;
   });
+
+  // 分组硬过滤(多选, OR 语义): 只显示选中分组内的论文 / Group hard filter (multi-select, OR)
+  if (activeGroups.length > 0) {
+    filteredPapers = filteredPapers.filter(p => {
+      if (activeGroups.includes('__ungrouped')) {
+        return !p.groups || p.groups.length === 0;
+      }
+      return p.groups && p.groups.some(g => activeGroups.includes(g));
+    });
+  }
 
   // 文本搜索优先：当存在非空文本时，像关键词/作者一样只排序不隐藏
   if (textSearchQuery && textSearchQuery.trim().length > 0) {
@@ -1135,7 +1408,10 @@ function renderPapers() {
         a.motivation || '',
         a.method || '',
         a.result || '',
-        a.conclusion || ''
+        a.conclusion || '',
+        a.abstract_zh || '',
+        (a.groups || []).join(' '),
+        (a.matched_keywords || []).join(' ')
       ].join(' ').toLowerCase();
       const hayB = [
         b.title,
@@ -1146,7 +1422,10 @@ function renderPapers() {
         b.motivation || '',
         b.method || '',
         b.result || '',
-        b.conclusion || ''
+        b.conclusion || '',
+        b.abstract_zh || '',
+        (b.groups || []).join(' '),
+        (b.matched_keywords || []).join(' ')
       ].join(' ').toLowerCase();
       const am = hayA.includes(q);
       const bm = hayB.includes(q);
@@ -1166,7 +1445,10 @@ function renderPapers() {
         p.motivation || '',
         p.method || '',
         p.result || '',
-        p.conclusion || ''
+        p.conclusion || '',
+        p.abstract_zh || '',
+        (p.groups || []).join(' '),
+        (p.matched_keywords || []).join(' ')
       ].join(' ').toLowerCase();
       const matched = hay.includes(q);
       p.isMatched = matched;
@@ -1353,9 +1635,12 @@ function renderPapers() {
       paperCard.title = `匹配: ${paper.matchReason.join(' | ')}`;
     }
     
-    const categoryTags = paper.allCategories ? 
-      paper.allCategories.map(cat => `<span class="category-tag">${cat}</span>`).join('') : 
+    const categoryTags = paper.allCategories ?
+      paper.allCategories.map(cat => `<span class="category-tag">${cat}</span>`).join('') :
       `<span class="category-tag">${paper.category}</span>`;
+
+    // 分组标签 / Topic group tags
+    const topicTags = (paper.groups || []).map(g => `<span class="topic-tag">${g}</span>`).join('');
     
     // 组合需要高亮的词：关键词 + 文本搜索
     const titleSummaryTerms = [];
@@ -1407,6 +1692,7 @@ function renderPapers() {
         <p class="paper-card-authors">${formattedAuthors}</p>
         <div class="paper-card-categories">
           ${categoryTags}
+          ${topicTags}
         </div>
       </div>
       <div class="paper-card-body">
@@ -1503,6 +1789,8 @@ function showPaperDetails(paper, paperIndex) {
     <div class="paper-details ${matchedPaperClass}">
       <p><strong>Authors: </strong>${highlightedAuthors}</p>
       <p><strong>Categories: </strong>${categoryDisplay}</p>
+      <p><strong>分组 / Groups: </strong>${(paper.groups || []).join(', ') || '—'}</p>
+      ${paper.matched_keywords && paper.matched_keywords.length > 0 ? `<p><strong>关联关键词: </strong>${paper.matched_keywords.join(', ')}</p>` : ''}
       <p><strong>Date: </strong>${formatDate(paper.date)}</p>
       
       
@@ -1516,6 +1804,7 @@ function showPaperDetails(paper, paperIndex) {
         ${paper.conclusion ? `<div class="paper-section"><h4>Conclusion</h4><p>${highlightedConclusion}</p></div>` : ''}
       </div>
       
+      ${paper.abstract_zh ? `<h3>摘要 (中文)</h3><p class="original-abstract">${paper.abstract_zh}</p>` : ''}
       ${highlightedAbstract ? `<h3>Abstract</h3><p class="original-abstract">${highlightedAbstract}</p>` : ''}
       
       <div class="pdf-preview-section">

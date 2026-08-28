@@ -1,4 +1,7 @@
-Please analyze the following abstract of papers. 
+Please analyze the following abstract of papers. Also provide a complete and faithful Chinese translation of the entire abstract in the abstract_zh field.
+
+Topic groups (name: keywords). Classify the paper into the groups it belongs to, using ONLY group names from this list:
+{groups}
 
 Content:
 {content}

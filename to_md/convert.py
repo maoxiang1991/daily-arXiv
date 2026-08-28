@@ -1,15 +1,31 @@
 import json
 import argparse
 import os
+import sys
 from itertools import count
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, help="Path to the jsonline file")
     args = parser.parse_args()
     data = []
-    preference = os.environ.get('CATEGORIES', 'cs.CV, cs.CL').split(',')
-    preference = list(map(lambda x: x.strip(), preference))
+    # 分类偏好(唯一配置源): topics.yaml 的 arxiv.categories, 缺失时回退默认
+    preference = ['cs.CV', 'cs.CL']
+    topics_file = Path(__file__).resolve().parent.parent / "topics.yaml"
+    if yaml is not None and topics_file.exists():
+        try:
+            config = yaml.safe_load(topics_file.read_text(encoding="utf-8"))
+            cats = config.get("arxiv", {}).get("categories", [])
+            if cats:
+                preference = [str(c) for c in cats]
+        except Exception as e:
+            print(f"读取 topics.yaml 失败, 使用默认偏好 / Failed to read topics.yaml: {e}", file=sys.stderr)
     def rank(cate):
         if cate in preference:
             return preference.index(cate)
@@ -63,6 +79,9 @@ if __name__ == "__main__":
                         method=ai_data.get('method', ''),
                         result=ai_data.get('result', ''),
                         conclusion=ai_data.get('conclusion', ''),
+                        abstract_zh=ai_data.get('abstract_zh', ''),
+                        groups=", ".join(ai_data.get('groups', [])) or "—",
+                        matched_keywords=", ".join(item.get('matched_keywords', [])) or "—",
                         cate=item['categories'][0],
                         idx=next(idx)
                     )

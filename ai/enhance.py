@@ -11,6 +11,8 @@ import requests
 
 import dotenv
 import argparse
+import yaml
+from pathlib import Path
 from tqdm import tqdm
 
 import langchain_core.exceptions
@@ -27,6 +29,33 @@ if os.path.exists('.env'):
 template = open("template.txt", "r").read()
 system = open("system.txt", "r").read()
 
+
+def load_config():
+    """
+    从 topics.yaml 加载项目配置(唯一配置源) / Load project config from topics.yaml (single source)
+    """
+    topics_file = Path(__file__).resolve().parent.parent / "topics.yaml"
+    if not topics_file.exists():
+        raise FileNotFoundError(
+            f"topics.yaml 不存在: {topics_file}。请先创建配置文件 / topics.yaml not found, please create it first"
+        )
+    return yaml.safe_load(topics_file.read_text(encoding="utf-8"))
+
+
+def load_topic_groups(config):
+    """
+    从配置中提取关注分组 / Extract topic groups from config
+    返回 (分组名列表, 注入 prompt 的分组文本) / Returns (group names, prompt text)
+    """
+    groups = config.get("groups", [])
+    if not groups:
+        raise ValueError("topics.yaml 中没有定义任何分组 / No groups defined in topics.yaml")
+    names = [g["name"] for g in groups]
+    groups_text = "\n".join(
+        f"- {g['name']}: {', '.join(g.get('keywords', []))}" for g in groups
+    )
+    return names, groups_text
+
 def parse_args():
     """解析命令行参数"""
     parser = argparse.ArgumentParser()
@@ -34,15 +63,20 @@ def parse_args():
     parser.add_argument("--max_workers", type=int, default=1, help="Maximum number of parallel workers")
     return parser.parse_args()
 
-def process_single_item(chain, item: Dict, language: str) -> Dict:
+def process_single_item(chain, item: Dict, language: str, groups_text: str, known_group_names: List[str]) -> Dict:
     def is_sensitive(content: str) -> bool:
         """
-        调用 spam.dw-dengwei.workers.dev 接口检测内容是否包含敏感词。
+        调用敏感词检测接口检测内容是否包含敏感词。
         返回 True 表示触发敏感词，False 表示未触发。
+        接口地址可用环境变量 SPAM_CHECK_URL 覆盖; 设为空则跳过检测。
+        接口异常时放行(不判定为敏感), 避免第三方服务故障导致论文被误丢弃。
         """
+        spam_url = os.environ.get("SPAM_CHECK_URL", "https://spam.dw-dengwei.workers.dev")
+        if not spam_url:
+            return False
         try:
             resp = requests.post(
-                "https://spam.dw-dengwei.workers.dev",
+                spam_url,
                 json={"text": content},
                 timeout=5
             )
@@ -51,12 +85,12 @@ def process_single_item(chain, item: Dict, language: str) -> Dict:
                 # 约定接口返回 {"sensitive": true/false, ...}
                 return result.get("sensitive", True)
             else:
-                # 如果接口异常，默认不触发敏感词
-                print(f"Sensitive check failed with status {resp.status_code}", file=sys.stderr)
-                return True
+                # 接口异常时放行 / Fail-open when the service errors
+                print(f"Sensitive check failed with status {resp.status_code}, skipping (fail-open)", file=sys.stderr)
+                return False
         except Exception as e:
-            print(f"Sensitive check error: {e}", file=sys.stderr)
-            return True
+            print(f"Sensitive check error: {e}, skipping (fail-open)", file=sys.stderr)
+            return False
 
     def check_github_code(content: str) -> Dict:
         """提取并验证 GitHub 链接"""
@@ -121,15 +155,21 @@ def process_single_item(chain, item: Dict, language: str) -> Dict:
         "motivation": "Motivation analysis unavailable",
         "method": "Method extraction failed",
         "result": "Result analysis unavailable",
-        "conclusion": "Conclusion extraction failed"
+        "conclusion": "Conclusion extraction failed",
+        "abstract_zh": "",
+        "groups": []
     }
-    
+
     try:
         response: Structure = chain.invoke({
             "language": language,
-            "content": item['summary']
+            "content": item['summary'],
+            "groups": groups_text
         })
         item['AI'] = response.model_dump()
+        # 清洗分组: 丢弃模型编造的组名, 只保留 topics.yaml 中定义的
+        raw_groups = item['AI'].get('groups', []) or []
+        item['AI']['groups'] = [g for g in raw_groups if g in known_group_names]
     except langchain_core.exceptions.OutputParserException as e:
         # 尝试从错误信息中提取 JSON 字符串并修复
         error_msg = str(e)
@@ -165,11 +205,14 @@ def process_single_item(chain, item: Dict, language: str) -> Dict:
             return None
     return item
 
-def process_all_items(data: List[Dict], model_name: str, language: str, max_workers: int) -> List[Dict]:
+def process_all_items(data: List[Dict], model_name: str, base_url: str, language: str, max_workers: int,
+                      groups_text: str, known_group_names: List[str]) -> List[Dict]:
     """并行处理所有数据项"""
     llm = ChatOpenAI(
             model=model_name,
-            model_kwargs={"extra_body": {"thinking": {"type": "disabled"}}}
+            base_url=base_url or None,
+            api_key=os.environ.get("OPENAI_API_KEY") or None,
+            extra_body={"thinking": {"type": "disabled"}}
         ).with_structured_output(Structure, method="function_calling")
 
     print('Connect to:', model_name, file=sys.stderr)
@@ -186,7 +229,7 @@ def process_all_items(data: List[Dict], model_name: str, language: str, max_work
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # 提交所有任务
         future_to_idx = {
-            executor.submit(process_single_item, chain, item, language): idx
+            executor.submit(process_single_item, chain, item, language, groups_text, known_group_names): idx
             for idx, item in enumerate(data)
         }
         
@@ -209,15 +252,24 @@ def process_all_items(data: List[Dict], model_name: str, language: str, max_work
                     "motivation": "Processing failed",
                     "method": "Processing failed",
                     "result": "Processing failed",
-                    "conclusion": "Processing failed"
+                    "conclusion": "Processing failed",
+                    "abstract_zh": "",
+                    "groups": []
                 }
     
     return processed_data
 
 def main():
     args = parse_args()
-    model_name = os.environ.get("MODEL_NAME", 'deepseek-chat')
-    language = os.environ.get("LANGUAGE", 'Chinese')
+
+    # 从 topics.yaml 加载配置(唯一配置源) / Load config from topics.yaml (single source)
+    config = load_config()
+    llm_cfg = config.get("llm", {})
+    model_name = llm_cfg.get("model_name", "deepseek-v4-flash")
+    language = llm_cfg.get("language", "Chinese")
+    base_url = llm_cfg.get("base_url", "")
+    known_group_names, groups_text = load_topic_groups(config)
+    print(f'配置来源 topics.yaml / Config from topics.yaml: model={model_name}, language={language}, groups={known_group_names}', file=sys.stderr)
 
     # 检查并删除目标文件
     target_file = args.data.replace('.jsonl', f'_AI_enhanced_{language}.jsonl')
@@ -246,8 +298,11 @@ def main():
     processed_data = process_all_items(
         data,
         model_name,
+        base_url,
         language,
-        args.max_workers
+        args.max_workers,
+        groups_text,
+        known_group_names
     )
     
     # 保存结果

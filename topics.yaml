@@ -1,0 +1,63 @@
+# 项目核心配置(唯一配置源) / Core config (single source of truth)
+# 所有可配置项都在本文件; 环境变量只用于密钥(OPENAI_API_KEY, 见 ai/.env)
+# All config lives here; env vars are only for secrets (OPENAI_API_KEY in ai/.env)
+#
+# 1) arxiv.categories: 每日爬取的 arXiv 分类 / arXiv categories to crawl daily
+# 2) llm: 摘要模型配置(密钥不在此处) / LLM config (no secrets here)
+# 3) groups: 关注分组 = 名称 + 关键词列表, LLM 按摘要判定论文归属分组, 关键词同时用于初筛过滤
+#    增删分组只需修改本文件, 前端自动同步 (assets/groups.json 由 export_groups.py 生成)
+version: 1
+arxiv:
+  categories:
+    - cs.CV   # 计算机视觉与模式识别 / Computer Vision and Pattern Recognition
+    - cs.RO   # 机器人学 / Robotics (SLAM/VIO/LVIO 主分类)
+llm:
+  language: Chinese          # 摘要输出语言(Chinese/English) / Output language
+  model_name: deepseek-v4-flash   # 模型名称 / Model name
+  base_url: https://api.deepseek.com/v1   # OpenAI 兼容接口地址 / OpenAI-compatible API base URL
+search_days: 7   # 关键词搜索回溯天数 / lookback days for keyword search
+groups:
+  - name: "SLAM"
+    keywords:
+      - "SLAM"
+      - "simultaneous localization and mapping"
+      - "visual SLAM"
+      - "LiDAR SLAM"
+      - "visual odometry"
+      - "LiDAR odometry"
+      - "multi-sensor fusion"
+      - "sensor fusion"
+      - "loop closure"
+      - "bundle adjustment"
+      - "pose graph optimization"
+      - "factor graph"
+      - "point cloud registration"
+      - "relocalization"
+      - "localization and mapping"
+  - name: "VIO / LVIO"
+    keywords:
+      - "visual-inertial odometry"
+      - "VIO"
+      - "LVIO"
+      - "LiDAR-inertial odometry"
+      - "LiDAR-inertial"
+      - "visual-inertial"
+      - "IMU pre-integration"
+      - "IMU"
+      - "odometry"
+      - "inertial odometry"
+      - "tightly-coupled"
+      - "loosely-coupled"
+      - "visual-inertial SLAM"
+      - "LiDAR-visual-inertial"
+  - name: "图像匹配与特征提取"
+    keywords:
+      - "image matching"
+      - "feature extraction"
+      - "feature matching"
+      - "keypoint detection"
+      - "local feature"
+      - "image registration"
+      - "cross-view"
+      - "geo-localization"
+      - "visual place recognition"

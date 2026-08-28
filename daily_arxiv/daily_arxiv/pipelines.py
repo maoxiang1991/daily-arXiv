@@ -5,28 +5,14 @@
 
 
 # useful for handling different item types with a single interface
-import arxiv
-import json
-import os
-import sys
-from datetime import datetime, timedelta
 
 
 class DailyArxivPipeline:
-    def __init__(self):
-        self.page_size = 100
-        self.client = arxiv.Client(self.page_size)
+    """补充论文 URL 字段 / Fill in pdf/abs URLs.
+    元数据(标题/作者/摘要等)已由 spider 在 parse 阶段批量抓取
+    Metadata is batch-fetched by the spider during parse."""
 
     def process_item(self, item: dict, spider):
         item["pdf"] = f"https://arxiv.org/pdf/{item['id']}"
         item["abs"] = f"https://arxiv.org/abs/{item['id']}"
-        search = arxiv.Search(
-            id_list=[item["id"]],
-        )
-        paper = next(self.client.results(search))
-        item["authors"] = [a.name for a in paper.authors]
-        item["title"] = paper.title
-        item["categories"] = paper.categories
-        item["comment"] = paper.comment
-        item["summary"] = paper.summary
         return item

@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "search_days": 7,
+  "groups": [
+    {
+      "name": "SLAM",
+      "keywords": [
+        "SLAM",
+        "simultaneous localization and mapping",
+        "visual SLAM",
+        "LiDAR SLAM",
+        "visual odometry",
+        "LiDAR odometry",
+        "multi-sensor fusion",
+        "sensor fusion",
+        "loop closure",
+        "bundle adjustment",
+        "pose graph optimization",
+        "factor graph",
+        "point cloud registration",
+        "relocalization",
+        "localization and mapping"
+      ]
+    },
+    {
+      "name": "VIO / LVIO",
+      "keywords": [
+        "visual-inertial odometry",
+        "VIO",
+        "LVIO",
+        "LiDAR-inertial odometry",
+        "LiDAR-inertial",
+        "visual-inertial",
+        "IMU pre-integration",
+        "IMU",
+        "odometry",
+        "inertial odometry",
+        "tightly-coupled",
+        "loosely-coupled",
+        "visual-inertial SLAM",
+        "LiDAR-visual-inertial"
+      ]
+    },
+    {
+      "name": "图像匹配与特征提取",
+      "keywords": [
+        "image matching",
+        "feature extraction",
+        "feature matching",
+        "keypoint detection",
+        "local feature",
+        "image registration",
+        "cross-view",
+        "geo-localization",
+        "visual place recognition"
+      ]
+    }
+  ]
+}

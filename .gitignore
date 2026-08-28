@@ -17,3 +17,12 @@ package-lock.json
 yarn.lock
 .DS_Store
 package.json
+
+# 论文数据(存放在 data 分支, 不进入 main) / Paper data (lives on the data branch, not main)
+data/
+# 运行时生成的资产 / Runtime-generated assets
+assets/file-list.txt
+assets/file-stats.json
+# IDE 索引缓存 / IDE index caches
+.vscode/browse.vc.db*
+.vscode/c_cpp_properties.json

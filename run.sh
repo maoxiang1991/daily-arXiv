@@ -191,33 +191,9 @@ fi
 
 cd ..
 
-# 第五步：更新文件列表 / Step 5: Update file list
-echo "步骤5：更新文件列表... / Step 5: Updating file list..."
-ls data/*.jsonl | sed 's|data/||' > assets/file-list.txt
-echo "✅ 文件列表更新完成 / File list updated"
-
-# 第五步附加：生成每日论文数统计 / Step 5+: Generate per-date paper counts
-{
-    echo "{"
-    first=true
-    for f in data/*_AI_enhanced_${LANGUAGE}.jsonl; do
-        [ -f "$f" ] || continue
-        d=$(basename "$f" | cut -d_ -f1)
-        c=$(wc -l < "$f")
-        if [ "$first" = "true" ]; then
-            echo "  \"$d\": $c"
-            first=false
-        else
-            echo "  ,\"$d\": $c"
-        fi
-    done
-    echo "}"
-} > assets/file-stats.json
-echo "✅ 每日论文数统计更新完成 / Per-date paper counts updated"
-
-# 第五步半：导出分组配置供前端使用 / Step 5.5: Export groups config for the frontend
-echo "步骤5.5：导出分组配置... / Step 5.5: Exporting groups config..."
-python export_groups.py
+# 第五步：更新前端资产(文件列表/每日统计/分组配置) / Step 5: Update frontend assets
+echo "步骤5：更新文件列表/每日统计/分组配置... / Step 5: Updating file list, stats and groups..."
+bash update_assets.sh
 
 # 完成总结 / Completion summary
 echo ""

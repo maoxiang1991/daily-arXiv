@@ -58,8 +58,29 @@ jobs:
         echo "crawl_date=$today" >> $GITHUB_OUTPUT
         echo "爬取完成 / Crawling completed"
         
+    - name: Filter by group keywords
+      id: filter_check
+      run: |
+        source .venv/bin/activate
+        today=${{ steps.crawl_step.outputs.crawl_date }}
+        echo "按分组关键词过滤... / Filtering by group keywords..."
+
+        cd daily_arxiv
+        set +e
+        python daily_arxiv/filter_keywords.py ../data/${today}.jsonl
+        filter_exit=$?
+        set -e
+
+        if [ $filter_exit -eq 1 ]; then
+          echo "has_matches=false" >> $GITHUB_OUTPUT
+          echo "⚠️ 没有命中分组关键词的论文 / No papers matched group keywords"
+        else
+          echo "has_matches=true" >> $GITHUB_OUTPUT
+        fi
+
     - name: Check for duplicates
       id: dedup_check
+      if: steps.filter_check.outputs.has_matches == 'true'
       run: |
         source .venv/bin/activate
         echo "执行去重检查... / Performing intelligent deduplication check..."
@@ -106,11 +127,10 @@ jobs:
         
         cd ai
         export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-        export OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }}
-        export LANGUAGE="${{ vars.LANGUAGE }}"
-        export MODEL_NAME="${{ vars.MODEL_NAME }}"
-        
-        python enhance.py --data ../data/${today}.jsonl
+        export TOKEN_GITHUB=${{ secrets.TOKEN_GITHUB }}
+        # 模型/语言/base_url 由 topics.yaml 统一配置 / model/language/base_url come from topics.yaml
+
+        python enhance.py --data ../data/${today}.jsonl --max_workers 4
         
         # 检查AI处理是否成功 / Check if AI processing was successful
         if [ $? -ne 0 ]; then
@@ -126,9 +146,9 @@ jobs:
         today=${{ steps.crawl_step.outputs.crawl_date }}
         echo "转换为Markdown格式... / Converting to Markdown format..."
         
-        # 设置环境变量 / Set environment variables
-        export LANGUAGE="${{ vars.LANGUAGE }}"
-        
+        # 从 topics.yaml 读取语言配置 / Read language from topics.yaml
+        export LANGUAGE=$(python -c "import yaml; print(yaml.safe_load(open('../topics.yaml')).get('llm', {}).get('language', 'Chinese'))")
+
         cd to_md
         
         # 使用AI增强文件进行转换 / Use AI enhanced file for conversion
@@ -150,12 +170,12 @@ jobs:
         fi
         echo "Markdown转换完成 / Markdown conversion completed"
         
-    - name: Update file list
+    - name: Update file list, stats and groups
       if: steps.dedup_check.outputs.has_new_content == 'true'
       run: |
-        echo "更新文件列表... / Updating file list..."
-        ls data/*.jsonl | sed 's|data/||' > assets/file-list.txt
-        echo "文件列表更新完成 / File list updated"
+        echo "更新文件列表/每日统计/分组配置... / Updating file list, per-date stats and groups..."
+        bash update_assets.sh
+        echo "前端资产更新完成 / Frontend assets updated"
 
     - name: Generate password hash and inject into config
       if: steps.dedup_check.outputs.has_new_content == 'true'
@@ -193,7 +213,9 @@ jobs:
 
     - name: Summary
       run: |
-        if [ "${{ steps.dedup_check.outputs.has_new_content }}" = "true" ]; then
+        if [ "${{ steps.filter_check.outputs.has_matches }}" = "false" ]; then
+          echo "ℹ️ 工作流完成：没有命中分组关键词的论文 / Workflow completed: No papers matched group keywords"
+        elif [ "${{ steps.dedup_check.outputs.has_new_content }}" = "true" ]; then
           echo "✅ 工作流完成：去重发现新内容并成功处理 / Workflow completed: Smart deduplication found new content and processed successfully"
         else
           case "${{ steps.dedup_check.outputs.skip_reason }}" in

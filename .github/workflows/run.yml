@@ -259,8 +259,9 @@ jobs:
     - name: Commit code changes to main branch
       if: steps.dedup_check.outputs.has_new_content == 'true'
       run: |
-        git config --global user.email "${{ vars.EMAIL }}"
-        git config --global user.name "${{ vars.NAME }}"
+        # 未配置 EMAIL/NAME 变量时使用 bot 身份兜底 / Fall back to bot identity if vars unset
+        git config --global user.email "${{ vars.EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}"
+        git config --global user.name "${{ vars.NAME || 'github-actions[bot]' }}"
         
         # 添加所有代码文件，但排除数据文件 / Add all code files, but exclude data files
         git add js/data-config.js
@@ -320,8 +321,9 @@ jobs:
     - name: Setup and commit to data branch
       if: steps.dedup_check.outputs.has_new_content == 'true'
       run: |
-        git config --global user.email "${{ vars.EMAIL }}"
-        git config --global user.name "${{ vars.NAME }}"
+        # 未配置 EMAIL/NAME 变量时使用 bot 身份兜底 / Fall back to bot identity if vars unset
+        git config --global user.email "${{ vars.EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}"
+        git config --global user.name "${{ vars.NAME || 'github-actions[bot]' }}"
         
         echo "设置 data 分支... / Setting up data branch..."
         today=${{ steps.crawl_step.outputs.crawl_date }}

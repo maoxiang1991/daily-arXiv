@@ -6,7 +6,12 @@
 # 2) llm: 摘要模型配置(密钥不在此处) / LLM config (no secrets here)
 # 3) groups: 关注分组 = 名称 + 关键词列表, LLM 按摘要判定论文归属分组, 关键词同时用于初筛过滤
 #    增删分组只需修改本文件, 前端自动同步 (assets/groups.json 由 export_groups.py 生成)
+# 4) exclude_keywords: 排除关键词 —— 命中任一排除词的论文会被直接剔除(优先级高于分组关键词)
+#    看到误入的论文时, 把它的特征词加到这里即可 / Blacklist: papers hitting any of these are dropped
 version: 1
+exclude_keywords:
+  - "anomaly detection"
+  - "segmentation"
 arxiv:
   categories:
     - cs.CV   # 计算机视觉与模式识别 / Computer Vision and Pattern Recognition

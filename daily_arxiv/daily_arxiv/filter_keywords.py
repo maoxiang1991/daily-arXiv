@@ -41,18 +41,30 @@ DEFAULT_KEYWORDS = [
 
 def load_keywords():
     # 从 topics.yaml 取所有分组关键词的并集 / Union of all group keywords from topics.yaml
+    config = load_config()
+    keywords = []
+    for g in config.get("groups", []):
+        keywords.extend(g.get("keywords", []))
+    if keywords:
+        return keywords
+    return DEFAULT_KEYWORDS
+
+
+def load_exclude_keywords():
+    """从 topics.yaml 读取排除关键词 / Load exclude keywords from topics.yaml"""
+    config = load_config()
+    return [str(k).strip() for k in config.get("exclude_keywords", []) if str(k).strip()]
+
+
+def load_config():
+    """读取 topics.yaml 配置 / Load topics.yaml config"""
     topics_file = Path(__file__).resolve().parents[2] / "topics.yaml"
     if yaml is not None and topics_file.exists():
         try:
-            config = yaml.safe_load(topics_file.read_text(encoding="utf-8"))
-            keywords = []
-            for g in config.get("groups", []):
-                keywords.extend(g.get("keywords", []))
-            if keywords:
-                return keywords
+            return yaml.safe_load(topics_file.read_text(encoding="utf-8")) or {}
         except Exception as e:
-            print(f"读取 topics.yaml 失败, 使用内置默认关键词 / Failed to read topics.yaml, using defaults: {e}", file=sys.stderr)
-    return DEFAULT_KEYWORDS
+            print(f"读取 topics.yaml 失败 / Failed to read topics.yaml: {e}", file=sys.stderr)
+    return {}
 
 
 def matched_keywords(text, keywords):
@@ -75,7 +87,9 @@ def main():
 
     file_path = sys.argv[1]
     keywords = load_keywords()
+    exclude_keywords = load_exclude_keywords()
     print(f"过滤关键词 / Filter keywords: {keywords}", file=sys.stderr)
+    print(f"排除关键词 / Exclude keywords: {exclude_keywords}", file=sys.stderr)
 
     papers = []
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -84,6 +98,7 @@ def main():
                 papers.append(json.loads(line))
 
     kept = []
+    excluded = []
     seen_ids = set()  # 同日内跨列表重复去重 / dedup cross-listed papers within the same day
     for p in papers:
         pid = p.get('id', '')
@@ -91,12 +106,22 @@ def main():
             continue
         text = f"{p.get('title', '')} {p.get('summary', '')}"
         hits = matched_keywords(text, keywords)
-        if hits:
-            p['matched_keywords'] = hits
-            kept.append(p)
-            seen_ids.add(pid)
+        if not hits:
+            continue
+        # 排除关键词优先 / Exclude keywords take priority
+        exclude_hits = matched_keywords(text, exclude_keywords)
+        if exclude_hits:
+            excluded.append((p.get('id'), exclude_hits))
+            continue
+        p['matched_keywords'] = hits
+        kept.append(p)
+        seen_ids.add(pid)
 
     print(f"总数 / Total: {len(papers)}, 保留 / Kept: {len(kept)}, 剔除 / Dropped: {len(papers) - len(kept)}", file=sys.stderr)
+    if excluded:
+        print(f"排除(黑名单命中) / Excluded by blacklist: {len(excluded)} 篇", file=sys.stderr)
+        for pid, ehs in excluded[:10]:
+            print(f"  ✗ {pid} | 排除词: {ehs}", file=sys.stderr)
     for p in kept[:10]:
         print(f"  ✓ {p.get('id')} {p.get('title', '')[:60]} | 关键词: {p['matched_keywords']}", file=sys.stderr)
 

@@ -25,9 +25,9 @@ llm:
 search_days: 7   # 关键词搜索回溯天数 / lookback days for keyword search
 feishu:   # 飞书推送与知识库(非敏感标识; 密钥 FEISHU_APP_ID/SECRET 在 ai/.env 与 GitHub Secrets)
   chat_id: "oc_47713d1be5dc9cd8f36f3aa3dc6aeb0c"   # 接收每日汇总的群「论文速递」(用 feishu_sync.py --list-chats 获取)
-  app_token: ""        # 多维表格 app_token(表格 URL 中 /base/ 后的字符串)
-  table_id: ""         # 数据表 ID(tblxxx)
-  wiki_node_token: ""  # 知识库挂载点节点(wikcnxxx; 留空则文档只导入云空间不挂知识库)
+  app_token: "FnfrbLWBKaicWbsBXW4cF154nYc"        # 多维表格「论文速递」app_token(知识库中的表格, 经 wiki 节点解析)
+  table_id: "tblq48uerWKrOGiq"                    # 数据表 ID(表格 URL 的 table= 参数)
+  wiki_node_token: "V4LBwxgcSiAQ30k6c9Sctg4dnHe"  # 知识库挂载点节点「首页」(每日文档导入到该节点下)
   site_url: "https://maoxiang1991.github.io/daily-arXiv/"   # 消息末尾网站链接(留空不显示)
 groups:
   - name: "SLAM"

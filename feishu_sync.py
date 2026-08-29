@@ -20,6 +20,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -263,7 +264,7 @@ def get_wiki_space_id(token, node_token):
 def wiki_has_doc(token, space_id, parent_token, title):
     r = requests.get(
         f"{BASE}/wiki/v2/spaces/{space_id}/nodes",
-        params={"page_size": 100, "parent_node_token": parent_token},
+        params={"page_size": 50, "parent_node_token": parent_token},
         headers=api_headers(token),
         timeout=15,
     )
@@ -276,77 +277,95 @@ def wiki_has_doc(token, space_id, parent_token, title):
     return False
 
 
-def import_markdown_doc(token, md_path, title, wiki_node_token):
-    """上传 .md → 导入为 docx 云文档 → 挂载到知识库节点 / upload → import as docx → mount to wiki"""
-    file_name = md_path.name  # 如 2026-08-28.md, 扩展名须与 file_extension 严格一致
-    with open(md_path, "rb") as f:
-        r = requests.post(
-            f"{BASE}/drive/v1/files/upload_all",
-            headers={"Authorization": f"Bearer {token}"},
-            data={"file_name": file_name, "parent_type": "explorer", "parent_node": "", "size": str(md_path.stat().st_size)},
-            files={"file": (file_name, f, "text/markdown")},
-            timeout=60,
-        )
-    d = r.json()
-    if d.get("code") != 0:
-        raise RuntimeError(f"上传文件失败 / upload failed: code={d.get('code')} msg={d.get('msg')}")
-    file_token = d["data"]["file_token"]
+def parse_inline(text):
+    """把 [文本](url) 链接拆成多个 text_run 元素 / Split markdown links into text_run elements
+    注: 飞书链接样式只接受 http(s) URL, # 锚点等直接渲染为纯文本
+    """
+    elements = []
+    for part in re.split(r"(\[[^\]]+\]\([^)]+\))", text):
+        if not part:
+            continue
+        m = re.match(r"\[([^\]]+)\]\(([^)]+)\)", part)
+        if m and m.group(2).startswith(("http://", "https://")):
+            elements.append({"text_run": {"content": m.group(1), "text_element_style": {"link": {"url": m.group(2)}}}})
+        elif m:
+            elements.append({"text_run": {"content": m.group(1), "text_element_style": {}}})
+        else:
+            elements.append({"text_run": {"content": part, "text_element_style": {}}})
+    return elements
 
-    ext = file_name.rsplit(".", 1)[-1]  # md
+
+def md_to_blocks(md_text):
+    """把本项目生成的 Markdown 报告转换为飞书文档块 / Convert our markdown report to Feishu docx blocks
+    支持子集: # / ### 标题、- 列表、*斜体*、[文本](链接)、<details>/<summary> 折叠标记(降级为普通文本)
+    """
+    blocks = []
+    for line in md_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("### "):
+            blocks.append({"block_type": 4, "heading2": {"elements": parse_inline(stripped[4:])}})
+        elif stripped.startswith("# "):
+            blocks.append({"block_type": 3, "heading1": {"elements": parse_inline(stripped[2:])}})
+        elif stripped.startswith("- "):
+            blocks.append({"block_type": 12, "bullet": {"elements": parse_inline(stripped[2:])}})
+        elif stripped in ("<details>", "</details>", "<summary>") or stripped.startswith("<summary"):
+            continue  # 折叠标记降级: 直接忽略, 内容照常显示
+        else:
+            # 去掉 *斜体* 包裹
+            t = re.sub(r"^\*(.*)\*$", r"\1", stripped)
+            blocks.append({"block_type": 2, "text": {"elements": parse_inline(t)}})
+    return blocks
+
+
+def create_wiki_doc(token, space_id, parent_token, title, blocks):
+    """在知识库节点下创建 docx 文档并写入内容 / Create a docx wiki node and write blocks
+    注: 飞书 drive 导入任务在本租户不稳定(服务端 rpc_failed), 改用 docx 直写方案
+    """
+    # 1. 创建 docx 节点 / Create docx node under the parent
     r = requests.post(
-        f"{BASE}/drive/v1/import_tasks",
+        f"{BASE}/wiki/v2/spaces/{space_id}/nodes",
         headers=api_headers(token),
-        json={"file_extension": ext, "file_token": file_token, "type": "docx", "file_name": title},
+        json={"obj_type": "docx", "title": title, "parent_node_token": parent_token, "node_type": "origin"},
         timeout=15,
     )
     d = r.json()
     if d.get("code") != 0:
-        raise RuntimeError(f"创建导入任务失败 / import_task failed: code={d.get('code')} msg={d.get('msg')}")
-    ticket = d["data"]["ticket"]
+        raise RuntimeError(f"创建知识库文档失败 / create wiki node failed: code={d.get('code')} msg={d.get('msg')}")
+    doc_id = d["data"]["node"]["obj_token"]
 
-    doc_token = None
-    for _ in range(30):  # 轮询导入结果, 最长约 60 秒 / poll up to ~60s
-        time.sleep(2)
-        r = requests.get(f"{BASE}/drive/v1/import_tasks/{ticket}", headers=api_headers(token), timeout=15)
-        d = r.json()
-        if d.get("code") != 0:
-            raise RuntimeError(f"查询导入任务失败 / poll import failed: {d.get('msg')}")
-        result = d.get("data", {}).get("result", {})
-        if result:
-            doc_token = result.get("token")
-            break
-    if not doc_token:
-        raise RuntimeError(f"导入超时 / import timeout for ticket {ticket}")
-    log(f"文档导入完成 / doc imported: {doc_token}")
-
-    if wiki_node_token:
-        space_id = get_wiki_space_id(token, wiki_node_token)
+    # 2. 分批写入块(单次最多 40 个) / Write blocks in batches (max 40 per call)
+    for i in range(0, len(blocks), 40):
+        chunk = blocks[i:i + 40]
         r = requests.post(
-            f"{BASE}/wiki/v2/spaces/{space_id}/nodes/move_docs_to_wiki",
+            f"{BASE}/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
             headers=api_headers(token),
-            json={"parent_wiki_token": wiki_node_token, "obj_type": "docx", "obj_token": doc_token},
-            timeout=15,
+            json={"children": chunk, "index": i},
+            timeout=30,
         )
         d = r.json()
         if d.get("code") != 0:
-            log(f"⚠️ 挂载到知识库失败(文档留在云空间) / mount to wiki failed: code={d.get('code')} msg={d.get('msg')}")
-            return None
-        log("✅ 文档已挂载到知识库 / doc mounted to wiki")
-    return doc_token
+            raise RuntimeError(f"写入文档块失败 / write blocks failed: code={d.get('code')} msg={d.get('msg')}")
+    log(f"✅ 知识库文档已创建 / wiki doc created: {title} ({len(blocks)} blocks)")
+    return doc_id
 
 
 def sync_doc(token, cfg, date_str, md_path):
     wiki_node_token = (cfg.get("wiki_node_token") or "").strip()
     title = f"{DOC_TITLE_PREFIX} {date_str}"
+    if not wiki_node_token:
+        log("⚠️ 未配置 wiki_node_token, 跳过文档导入 / skipping doc (wiki_node_token not set)")
+        return None
     if not md_path.exists():
         log(f"⚠️ Markdown 文件不存在, 跳过文档导入 / md not found, skipping: {md_path}")
         return None
-    if wiki_node_token:
-        space_id = get_wiki_space_id(token, wiki_node_token)
-        if wiki_has_doc(token, space_id, wiki_node_token, title):
-            log(f"✅ 知识库已存在「{title}」, 跳过 / doc already exists, skipping")
-            return None
-    return import_markdown_doc(token, md_path, title, wiki_node_token)
+    space_id = get_wiki_space_id(token, wiki_node_token)
+    if wiki_has_doc(token, space_id, wiki_node_token, title):
+        log(f"✅ 知识库已存在「{title}」, 跳过 / doc already exists, skipping")
+        return None
+    blocks = md_to_blocks(md_path.read_text(encoding="utf-8"))
+    return create_wiki_doc(token, space_id, wiki_node_token, title, blocks)
 
 
 # ---------------- 工具模式 / Utility modes ----------------

@@ -399,6 +399,16 @@ def main():
     args = parser.parse_args()
 
     config = load_config()
+
+    # 自动读取 ai/.env 中的密钥(gitignored) / Auto-load secrets from ai/.env
+    env_file = ROOT / "ai" / ".env"
+    if env_file.exists():
+        try:
+            import dotenv
+            dotenv.load_dotenv(env_file)
+        except ImportError:
+            pass
+
     feishu_cfg = config.get("feishu", {}) or {}
     language = config.get("llm", {}).get("language", "Chinese")
     site_url = (feishu_cfg.get("site_url") or "").strip()

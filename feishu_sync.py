@@ -277,65 +277,93 @@ def wiki_has_doc(token, space_id, parent_token, title):
     return False
 
 
-def parse_inline(text):
-    """把 [文本](url) 链接拆成多个 text_run 元素 / Split markdown links into text_run elements
-    注: 飞书链接样式只接受 http(s) URL, # 锚点等直接渲染为纯文本
-    """
-    elements = []
-    for part in re.split(r"(\[[^\]]+\]\([^)]+\))", text):
-        if not part:
-            continue
-        m = re.match(r"\[([^\]]+)\]\(([^)]+)\)", part)
-        if m and m.group(2).startswith(("http://", "https://")):
-            elements.append({"text_run": {"content": m.group(1), "text_element_style": {"link": {"url": m.group(2)}}}})
-        elif m:
-            elements.append({"text_run": {"content": m.group(1), "text_element_style": {}}})
-        else:
-            elements.append({"text_run": {"content": part, "text_element_style": {}}})
-    return elements
+def el(text, style=None):
+    """构造 text_run 元素 / Build a text_run element"""
+    return {"text_run": {"content": text, "text_element_style": style or {}}}
 
 
-def md_to_blocks(md_text):
-    """把本项目生成的 Markdown 报告转换为飞书文档块 / Convert our markdown report to Feishu docx blocks
-    支持子集: # / ### 标题、- 列表、*斜体*、[文本](链接)、<details>/<summary> 折叠标记(降级为普通文本)
+def bold_el(text):
+    return el(text, {"bold": True})
+
+
+def link_el(text, url):
+    return el(text, {"link": {"url": url}})
+
+
+# 高亮块配色枚举: 红1 橙2 黄3 绿4 蓝5 紫6 灰7 / callout color enums
+CALLOUT_BLUE = {"background_color": 5, "border_color": 5, "emoji_id": "bulb"}
+CALLOUT_GREY = {"background_color": 7, "border_color": 7, "emoji_id": "star"}
+
+
+def build_doc_blocks(papers, date_str):
+    """从结构化论文数据构建美观的文档块 / Build pretty doc blocks from paper data
+    排版: 文档标题 → 每篇论文 = 分隔线 + 标题(链接) + 作者/分类/分组/关键词(加粗标签)
+    + TL;DR 蓝色高亮块 + 动机/方法/结果/结论 + 中文摘要灰色高亮块 + 链接行
+    返回 (blocks, callouts), callouts 为 [(块在 blocks 中的下标, 高亮块内容元素)]
     """
     blocks = []
-    for line in md_text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("### "):
-            blocks.append({"block_type": 4, "heading2": {"elements": parse_inline(stripped[4:])}})
-        elif stripped.startswith("# "):
-            blocks.append({"block_type": 3, "heading1": {"elements": parse_inline(stripped[2:])}})
-        elif stripped.startswith("- "):
-            blocks.append({"block_type": 12, "bullet": {"elements": parse_inline(stripped[2:])}})
-        elif stripped in ("<details>", "</details>", "<summary>") or stripped.startswith("<summary"):
-            continue  # 折叠标记降级: 直接忽略, 内容照常显示
-        else:
-            # 去掉 *斜体* 包裹
-            t = re.sub(r"^\*(.*)\*$", r"\1", stripped)
-            blocks.append({"block_type": 2, "text": {"elements": parse_inline(t)}})
-    return blocks
+    callouts = []
+    blocks.append({"block_type": 3, "heading1": {"elements": [el(f"📚 论文速递 {date_str} · {len(papers)} 篇")]}})
+    blocks.append({"block_type": 2, "text": {"elements": [el("每日自动生成: arXiv 爬取 → 关键词过滤 → LLM 摘要与分组")]}})
+
+    for p in papers:
+        groups = p.get("AI", {}).get("groups", []) or []
+        tag = "、".join(groups) if groups else "未分组"
+        title = p.get("title", "")
+        abs_url = p.get("abs") or ""
+        pdf_url = p.get("pdf") or ""
+        authors = ", ".join(p.get("authors", []) or [])
+        cats = ", ".join(p.get("categories", []) or [])
+        kws = ", ".join(p.get("matched_keywords", []) or [])
+        ai = p.get("AI", {}) or {}
+
+        blocks.append({"block_type": 22, "divider": {}})
+        # 标题(整行带 arXiv 链接)
+        title_elems = [el(f"【{tag}】")]
+        title_elems.append(link_el(title, abs_url) if abs_url else el(title))
+        blocks.append({"block_type": 4, "heading2": {"elements": title_elems}})
+        # 作者
+        blocks.append({"block_type": 2, "text": {"elements": [bold_el("作者: "), el(authors)]}})
+        # 元信息
+        meta = [bold_el("分类: "), el(cats)]
+        if groups:
+            meta += [bold_el("  分组: "), el(tag)]
+        if kws:
+            meta += [bold_el("  关键词: "), el(kws)]
+        blocks.append({"block_type": 2, "text": {"elements": meta}})
+        # TL;DR 蓝色高亮块
+        tldr = (ai.get("tldr") or "").strip()
+        if tldr:
+            blocks.append({"block_type": 19, "callout": dict(CALLOUT_BLUE)})
+            callouts.append((len(blocks) - 1, [bold_el("💡 TL;DR: "), el(tldr)]))
+        # 结构化摘要
+        for label, key in [("🎯 Motivation", "motivation"), ("🔧 Method", "method"), ("📊 Result", "result"), ("✅ Conclusion", "conclusion")]:
+            v = (ai.get(key) or "").strip()
+            if v:
+                blocks.append({"block_type": 2, "text": {"elements": [bold_el(f"{label}: "), el(v)]}})
+        # 中文摘要灰色高亮块
+        zh = (ai.get("abstract_zh") or "").strip()
+        if zh:
+            blocks.append({"block_type": 19, "callout": dict(CALLOUT_GREY)})
+            callouts.append((len(blocks) - 1, [bold_el("📄 摘要 (中文): "), el(zh)]))
+        # 链接行
+        link_elems = [bold_el("链接: ")]
+        if abs_url:
+            link_elems.append(link_el("arXiv", abs_url))
+        if pdf_url:
+            if abs_url:
+                link_elems.append(el("  |  "))
+            link_elems.append(link_el("PDF", pdf_url))
+        blocks.append({"block_type": 2, "text": {"elements": link_elems}})
+
+    return blocks, callouts
 
 
-def create_wiki_doc(token, space_id, parent_token, title, blocks):
-    """在知识库节点下创建 docx 文档并写入内容 / Create a docx wiki node and write blocks
-    注: 飞书 drive 导入任务在本租户不稳定(服务端 rpc_failed), 改用 docx 直写方案
+def write_blocks_to_doc(token, doc_id, blocks, callouts):
+    """分批向已有文档写入块(单次最多 40 个)并填充高亮块 / Write blocks to an existing doc
+    高亮块(callout)两步创建: 先建空容器, 再向容器内填内容
     """
-    # 1. 创建 docx 节点 / Create docx node under the parent
-    r = requests.post(
-        f"{BASE}/wiki/v2/spaces/{space_id}/nodes",
-        headers=api_headers(token),
-        json={"obj_type": "docx", "title": title, "parent_node_token": parent_token, "node_type": "origin"},
-        timeout=15,
-    )
-    d = r.json()
-    if d.get("code") != 0:
-        raise RuntimeError(f"创建知识库文档失败 / create wiki node failed: code={d.get('code')} msg={d.get('msg')}")
-    doc_id = d["data"]["node"]["obj_token"]
-
-    # 2. 分批写入块(单次最多 40 个) / Write blocks in batches (max 40 per call)
+    callout_ids = {}
     for i in range(0, len(blocks), 40):
         chunk = blocks[i:i + 40]
         r = requests.post(
@@ -347,25 +375,58 @@ def create_wiki_doc(token, space_id, parent_token, title, blocks):
         d = r.json()
         if d.get("code") != 0:
             raise RuntimeError(f"写入文档块失败 / write blocks failed: code={d.get('code')} msg={d.get('msg')}")
-    log(f"✅ 知识库文档已创建 / wiki doc created: {title} ({len(blocks)} blocks)")
+        children = d.get("data", {}).get("children", [])
+        for j, child in enumerate(children):
+            if child.get("block_type") == 19:
+                callout_ids[i + j] = child.get("block_id")
+
+    for pos, content in callouts:
+        cid = callout_ids.get(pos)
+        if not cid:
+            continue
+        r = requests.post(
+            f"{BASE}/docx/v1/documents/{doc_id}/blocks/{cid}/children",
+            headers=api_headers(token),
+            json={"children": [{"block_type": 2, "text": {"elements": content}}], "index": 0},
+            timeout=30,
+        )
+        d = r.json()
+        if d.get("code") != 0:
+            log(f"⚠️ 高亮块填充失败 / callout fill failed: {d.get('msg')}")
+    log(f"✅ 文档块写入完成 / blocks written: {len(blocks)} blocks, {len(callouts)} callouts")
+
+
+def create_wiki_doc(token, space_id, parent_token, title, blocks, callouts):
+    """在知识库节点下创建 docx 文档并写入内容 / Create a docx wiki node and write blocks
+    注: 飞书 drive 导入任务在本租户不稳定(服务端 rpc_failed), 改用 docx 直写方案
+    """
+    r = requests.post(
+        f"{BASE}/wiki/v2/spaces/{space_id}/nodes",
+        headers=api_headers(token),
+        json={"obj_type": "docx", "title": title, "parent_node_token": parent_token, "node_type": "origin"},
+        timeout=15,
+    )
+    d = r.json()
+    if d.get("code") != 0:
+        raise RuntimeError(f"创建知识库文档失败 / create wiki node failed: code={d.get('code')} msg={d.get('msg')}")
+    doc_id = d["data"]["node"]["obj_token"]
+    write_blocks_to_doc(token, doc_id, blocks, callouts)
+    log(f"✅ 知识库文档已创建 / wiki doc created: {title}")
     return doc_id
 
 
-def sync_doc(token, cfg, date_str, md_path):
+def sync_doc(token, cfg, date_str, papers):
     wiki_node_token = (cfg.get("wiki_node_token") or "").strip()
     title = f"{DOC_TITLE_PREFIX} {date_str}"
     if not wiki_node_token:
         log("⚠️ 未配置 wiki_node_token, 跳过文档导入 / skipping doc (wiki_node_token not set)")
         return None
-    if not md_path.exists():
-        log(f"⚠️ Markdown 文件不存在, 跳过文档导入 / md not found, skipping: {md_path}")
-        return None
     space_id = get_wiki_space_id(token, wiki_node_token)
     if wiki_has_doc(token, space_id, wiki_node_token, title):
         log(f"✅ 知识库已存在「{title}」, 跳过 / doc already exists, skipping")
         return None
-    blocks = md_to_blocks(md_path.read_text(encoding="utf-8"))
-    return create_wiki_doc(token, space_id, wiki_node_token, title, blocks)
+    blocks, callouts = build_doc_blocks(papers, date_str)
+    return create_wiki_doc(token, space_id, wiki_node_token, title, blocks, callouts)
 
 
 # ---------------- 工具模式 / Utility modes ----------------
@@ -499,12 +560,11 @@ def main():
 
     # 3) 知识库文档 / Wiki doc
     if not args.skip_doc:
-        md_path = ROOT / "data" / f"{date_str}.md"
         if args.dry_run:
-            print(f"=== 将导入知识库文档: {md_path} (存在: {md_path.exists()}) ===")
+            print(f"=== 将创建知识库文档「{DOC_TITLE_PREFIX} {date_str}」({len(papers)} 篇论文, 排版: 分隔线+标题链接+高亮块) ===")
         else:
             try:
-                sync_doc(token, feishu_cfg, date_str, md_path)
+                sync_doc(token, feishu_cfg, date_str, papers)
             except Exception as e:
                 log(f"⚠️ 知识库文档导入失败 / doc sync failed: {e}")
 

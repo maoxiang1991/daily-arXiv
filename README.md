@@ -51,21 +51,56 @@ Otherwise, you can watch the video above first and directly use this repo in htt
    <summary> If you want to customize categories, LLMs, or languages, click here.  </summary>
 
 ## Instructions
+
+所有运行配置（爬取分类/模型/语言/分组关键词/排除词/飞书标识）都在仓库根目录 **[topics.yaml](./topics.yaml)**，密钥只放 Secrets / ai/.env。
+
 1. Fork this repo to your own account and delete my own information in [buy-me-a-coffee](./buy-me-a-coffee/README.md).
 2. Go to: your-own-repo -> Settings -> Secrets and variables -> Actions
 3. Go to Secrets. Secrets are encrypted and used for sensitive data
-4. Create two repository secrets named `OPENAI_API_KEY` and `OPENAI_BASE_URL`, and input corresponding values.
-5. [Optional] Set a password in `secrets.ACCESS_PASSWORD` if you do not wish others to access your page. (see https://github.com/dw-dengwei/daily-arXiv-ai-enhanced/pull/64)
-6. Go to Variables. Variables are shown as plain text and are used for non-sensitive data
-7. Create the following repository variables:
-   1. `CATEGORIES`: separate the categories with ",", such as "cs.CL, cs.CV"
-   2. `LANGUAGE`: such as "Chinese" or "English"
-   3. `MODEL_NAME`: such as "deepseek-chat"
-   4. `EMAIL`: your email for push to GitHub
-   5. `NAME`: your name for push to GitHub
-8. Go to your-own-repo -> Actions -> arXiv-daily-ai-enhanced
-9. You can manually click **Run workflow** to test if it works well (it may take about one hour). By default, this action will automatically run every day. You can modify it in `.github/workflows/run.yml`
-10. Set up GitHub pages: Go to your own repo -> Settings -> Pages. In `Build and deployment`, set `Source="Deploy from a branch"`, `Branch="main", "/(root)"`. Wait for a few minutes, go to https://\<username\>.github.io/daily-arXiv-ai-enhanced/. Please see this [issue](https://github.com/dw-dengwei/daily-arXiv-ai-enhanced/issues/14) for more precise instructions.
+4. Create repository secrets:
+   - `OPENAI_API_KEY` (required): your DeepSeek (or other OpenAI-compatible) API key
+   - `FEISHU_APP_ID` / `FEISHU_APP_SECRET` (optional): Feishu push credentials, see [飞书推送与知识库](#飞书推送与知识库) below
+   - [Optional] `ACCESS_PASSWORD` if you do not wish others to access your page
+5. Go to Variables. Create:
+   - `EMAIL`: your email for push to GitHub
+   - `NAME`: your name for push to GitHub
+   - (未设置时 workflow 用 github-actions[bot] 身份提交)
+6. Customize [topics.yaml](./topics.yaml): 爬取分类 (arxiv.categories)、模型/语言 (llm)、关注分组与关键词 (groups)、排除词 (exclude_keywords)、飞书配置 (feishu)
+7. Go to your-own-repo -> Actions -> arXiv-daily-ai-enhanced, click **Run workflow** to test (约几分钟)
+8. Set up GitHub pages: Settings -> Pages. In `Build and deployment`, set `Source="Deploy from a branch"`, `Branch="main", "/(root)"`. Wait for a few minutes, go to https://\<username\>.github.io/\<repo\>/.
+   - Pages 需要公开仓库; 仓库设为公开前请确认 ai/.env 未被提交(已在 .gitignore)
+9. 定时: 每天 UTC 17:30 自动运行, 修改 `.github/workflows/run.yml` 的 cron 表达式可调整时间
+
+## 飞书推送与知识库
+
+每日结果自动推送飞书群消息, 并沉淀为多维表格(知识库)与知识库文档。需要先创建飞书开放平台自建应用:
+
+1. open.feishu.cn -> 开发者后台 -> 创建**企业自建应用**(如"论文速递"), 在「机器人」页启用机器人能力
+2. 「权限管理」申请: `im:message`(发消息)、`bitable:app`(多维表格读写)、`drive:drive`(上传+导入文档)、`wiki:wiki`(知识库); 可选 `im:chat:readonly`(用于 --list-chats)
+3. 「凭证与基础信息」复制 **App ID / App Secret**
+4. 「版本管理与发布」-> 创建版本 -> 申请发布(自建应用, 管理员即本人可直接通过)
+5. 建飞书群 -> 群设置 -> 群机器人 -> 添加机器人 -> 选择该应用
+6. 本地拿 chat_id: `python feishu_sync.py --list-chats`
+7. 新建多维表格(命名"论文知识库"), 从 URL 取 `app_token`(feishu.cn/base/xxx) 与 `table_id`(tblxxx); 本地建字段: `python feishu_sync.py --init-table`
+8. 知识库中新建目标页面(如"每日速递"), 取其节点 token 填入 topics.yaml 的 `feishu.wiki_node_token`; 如遇权限问题, 用"群组授权法": 建一个含机器人的群并设为知识库管理员
+9. 配置:
+   - topics.yaml `feishu:` 段: chat_id / app_token / table_id / wiki_node_token / site_url
+   - 密钥: 本地写入 ai/.env (gitignored), 部署在 GitHub Secrets 配置 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
+10. 测试: `python feishu_sync.py --date 2026-08-28 --dry-run`(不调 API 预览) -> `python feishu_sync.py --date 2026-08-28`(真实推送)
+
+脚本用法: `--skip-message` / `--skip-bitable` / `--skip-doc` 分别关闭群消息/表格/文档。
+
+### 常见报错
+
+| 错误 | 原因 | 解决 |
+|---|---|---|
+| code=230002 | 机器人不在群里 | 把应用机器人加入目标群 |
+| code=1254043 | 应用未加入多维表格 | 多维表格右上角把应用添加为协作者 |
+| code=1254003/1254004 | app_token/table_id 错误 | 从表格 URL 重新复制 |
+| HTTP 403 (wiki) | 知识库权限不足 | 群组授权法或把应用添加为节点协作者 |
+| code=1069910 | 导入扩展名不一致 | 确认上传文件名后缀与 file_extension 一致(.md) |
+| 未配置提示 | 密钥未设置 | 检查 FEISHU_APP_ID/SECRET, 未配置时自动跳过属正常 |
+
 </details>
 
 # Contributors

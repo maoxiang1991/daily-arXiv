@@ -23,6 +23,12 @@ llm:
   model_name: deepseek-v4-flash   # 模型名称 / Model name
   base_url: https://api.deepseek.com/v1   # OpenAI 兼容接口地址 / OpenAI-compatible API base URL
 search_days: 7   # 关键词搜索回溯天数 / lookback days for keyword search
+feishu:   # 飞书推送与知识库(非敏感标识; 密钥 FEISHU_APP_ID/SECRET 在 ai/.env 与 GitHub Secrets)
+  chat_id: ""          # 接收每日汇总的群 ID(oc_xxx, 用 feishu_sync.py --list-chats 获取)
+  app_token: ""        # 多维表格 app_token(表格 URL 中 /base/ 后的字符串)
+  table_id: ""         # 数据表 ID(tblxxx)
+  wiki_node_token: ""  # 知识库挂载点节点(wikcnxxx; 留空则文档只导入云空间不挂知识库)
+  site_url: "https://maoxiang1991.github.io/daily-arXiv/"   # 消息末尾网站链接(留空不显示)
 groups:
   - name: "SLAM"
     keywords:

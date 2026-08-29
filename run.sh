@@ -195,6 +195,10 @@ cd ..
 echo "步骤5：更新文件列表/每日统计/分组配置... / Step 5: Updating file list, stats and groups..."
 bash update_assets.sh
 
+# 第六步：飞书推送与知识库同步(未配置密钥时自动跳过) / Step 6: Feishu push & knowledge base sync
+echo "步骤6：飞书推送与知识库同步... / Step 6: Feishu push & knowledge base sync..."
+python feishu_sync.py --date ${today} || echo "⚠️ 飞书同步失败或未配置(不影响主流程) / Feishu sync failed or not configured (non-blocking)"
+
 # 完成总结 / Completion summary
 echo ""
 echo "=== 本地调试完成 / Local Debug Completed ==="

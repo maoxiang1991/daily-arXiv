@@ -76,7 +76,7 @@ Otherwise, you can watch the video above first and directly use this repo in htt
 每日结果自动推送飞书群消息, 并沉淀为多维表格(知识库)与知识库文档。需要先创建飞书开放平台自建应用:
 
 1. open.feishu.cn -> 开发者后台 -> 创建**企业自建应用**(如"论文速递"), 在「机器人」页启用机器人能力
-2. 「权限管理」申请: `im:message`(发消息)、`bitable:app`(多维表格读写)、`drive:drive`(上传+导入文档)、`wiki:wiki`(知识库); 可选 `im:chat:readonly`(用于 --list-chats)
+2. 「权限管理」申请: `im:message`(发消息)、`bitable:app`(多维表格读写)、`drive:drive`(上传+导入文档)、`docx:document`(创建/编辑文档, 导入任务服务端必需)、`wiki:wiki`(知识库); 可选 `im:chat:readonly`(用于 --list-chats)
 3. 「凭证与基础信息」复制 **App ID / App Secret**
 4. 「版本管理与发布」-> 创建版本 -> 申请发布(自建应用, 管理员即本人可直接通过)
 5. 建飞书群 -> 群设置 -> 群机器人 -> 添加机器人 -> 选择该应用

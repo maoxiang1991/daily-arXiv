@@ -14,8 +14,10 @@ exclude_keywords:
   - "segmentation"
 arxiv:
   categories:
-    - cs.CV   # 计算机视觉与模式识别 / Computer Vision and Pattern Recognition
-    - cs.RO   # 机器人学 / Robotics (SLAM/VIO/LVIO 主分类)
+    - cs.CV     # 计算机视觉与模式识别 / Computer Vision and Pattern Recognition
+    - cs.RO     # 机器人学 / Robotics (SLAM/VIO/LVIO 主分类)
+    - eess.SY   # 系统与控制 / Systems and Control (惯性导航/状态估计/滤波)
+    - eess.IV   # 图像与视频处理 / Image and Video Processing (遥感图像处理/配准)
 llm:
   language: Chinese          # 摘要输出语言(Chinese/English) / Output language
   model_name: deepseek-v4-flash   # 模型名称 / Model name

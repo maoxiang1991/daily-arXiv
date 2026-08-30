@@ -84,7 +84,23 @@ jobs:
       run: |
         source .venv/bin/activate
         echo "执行去重检查... / Performing intelligent deduplication check..."
-        
+
+        # data/ 被 gitignore 排除在 main 之外, 历史数据只存在于 data 分支;
+        # 先拉取近7天原始数据用于去重对比。
+        # 周末 arXiv 无新论文时爬虫会重复返回最近一天的内容, 有了历史库才能识别并跳过 AI 调用
+        # data/ is gitignored on main; history lives only on the data branch.
+        # Fetch the last 7 days' raw data for dedup comparison — without it the
+        # dedup library is always empty (e.g. weekend crawls return stale papers
+        # and would wrongly trigger the LLM call)
+        git fetch origin data:data 2>/dev/null || echo "⚠️ 获取 data 分支失败(首次运行属正常) / data branch fetch failed (normal on first run)"
+        for i in $(seq 1 7); do
+          d=$(date -u -d "-$i days" +%Y-%m-%d)
+          if git cat-file -e "data:data/${d}.jsonl" 2>/dev/null; then
+            git show "data:data/${d}.jsonl" > "data/${d}.jsonl" || rm -f "data/${d}.jsonl"
+            echo "已获取历史数据: data/${d}.jsonl / Fetched history: data/${d}.jsonl"
+          fi
+        done
+
         cd daily_arxiv
         # 执行去重检查脚本 / Execute intelligent deduplication check script
         set +e  # 暂时允许命令失败 / Temporarily allow command failure

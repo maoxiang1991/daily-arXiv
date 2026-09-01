@@ -335,6 +335,15 @@ jobs:
         echo "临时目录内容 / /tmp/data_files contents:"
         ls -la /tmp/data_files/data/ /tmp/data_files/assets/
 
+    - name: Notify Feishu and sync knowledge base
+      if: steps.dedup_check.outputs.has_new_content == 'true'
+      run: |
+        echo "飞书推送与知识库同步... / Feishu push & knowledge base sync..."
+        source .venv/bin/activate
+        export FEISHU_APP_ID="${{ secrets.FEISHU_APP_ID }}"
+        export FEISHU_APP_SECRET="${{ secrets.FEISHU_APP_SECRET }}"
+        python feishu_sync.py --date ${{ steps.crawl_step.outputs.crawl_date }} || echo "⚠️ 飞书同步失败或未配置(不影响主流程) / Feishu sync failed or not configured (non-blocking)"
+
     - name: Setup and commit to data branch
       if: steps.dedup_check.outputs.has_new_content == 'true'
       run: |
@@ -393,15 +402,6 @@ jobs:
           git commit -m "update: $today arXiv papers"
           echo "数据变更已提交到 data 分支 / Data changes committed to data branch"
         fi
-
-    - name: Notify Feishu and sync knowledge base
-      if: steps.dedup_check.outputs.has_new_content == 'true'
-      run: |
-        echo "飞书推送与知识库同步... / Feishu push & knowledge base sync..."
-        source .venv/bin/activate
-        export FEISHU_APP_ID="${{ secrets.FEISHU_APP_ID }}"
-        export FEISHU_APP_SECRET="${{ secrets.FEISHU_APP_SECRET }}"
-        python feishu_sync.py --date ${{ steps.crawl_step.outputs.crawl_date }} || echo "⚠️ 飞书同步失败或未配置(不影响主流程) / Feishu sync failed or not configured (non-blocking)"
 
     - name: Push data changes to data branch
       if: steps.dedup_check.outputs.has_new_content == 'true'

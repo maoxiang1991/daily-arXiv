@@ -1,7 +1,5 @@
-2026-09-17.jsonl
-2026-09-18.jsonl
-2026-09-19.jsonl
 2026-09-21.jsonl
 2026-09-22.jsonl
 2026-09-24.jsonl
-2026-09-24_AI_enhanced_Chinese.jsonl
+2026-09-28.jsonl
+2026-09-28_AI_enhanced_Chinese.jsonl
